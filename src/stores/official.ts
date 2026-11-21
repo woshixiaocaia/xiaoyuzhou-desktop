@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 
 import {
   officialEpisodes,
+  officialFavorites,
   officialMediaUrl,
   officialSearch,
   officialSubscriptions,
@@ -15,6 +16,7 @@ import {
 } from '@/lib/official-search'
 import {
   pickOfficialEpisodes,
+  pickOfficialFavoriteEpisodes,
   pickOfficialPodcasts,
   type OfficialEpisode,
   type OfficialPodcast,
@@ -53,6 +55,12 @@ export const useOfficialStore = defineStore('official', () => {
   const loadingMore = ref(false)
 
   const episodes = ref<Record<string, EpisodeListState>>({})
+  const favoriteEpisodes = ref<OfficialEpisode[]>([])
+  const favoriteStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const favoriteError = ref('')
+  const favoriteLoadMoreKey = ref<unknown>(null)
+  const favoriteLoadingMore = ref(false)
+  let favoriteEpoch = 0
   const selectedPid = ref('')
   let sessionEpoch = 0
   let subscriptionsRequest = 0
@@ -60,6 +68,7 @@ export const useOfficialStore = defineStore('official', () => {
 
   const hasMore = computed(() => loadMoreKey.value !== null && loadMoreKey.value !== undefined)
   const count = computed(() => podcasts.value.length)
+  const hasMoreFavorites = computed(() => favoriteLoadMoreKey.value !== null && favoriteLoadMoreKey.value !== undefined)
 
   const selectedPodcast = computed(
     () => podcasts.value.find((item) => item.pid === selectedPid.value) ?? null,
@@ -118,44 +127,91 @@ export const useOfficialStore = defineStore('official', () => {
     episodeRequests.set(pid, request)
     const current = episodes.value[pid]
     if (!refresh && current !== undefined && current.status === 'ready') return
-    setEpisodes(pid, { status: 'loading', error: '', items: refresh ? [] : (current?.items ?? []), loadMoreKey: null })
+    setEpisodes(pid, { status: 'loading', error: '', loadingMore: false, items: refresh ? [] : (current?.items ?? []), loadMoreKey: null })
 
-    const result = await officialEpisodes(pid, undefined)
-    if (epoch !== sessionEpoch || request !== episodeRequests.get(pid)) return
-    if (!result.ok) {
-      setEpisodes(pid, { status: 'error', error: result.message })
-      return
+    try {
+      const result = await officialEpisodes(pid, undefined)
+      if (epoch !== sessionEpoch || request !== episodeRequests.get(pid)) return
+      if (!result.ok) {
+        setEpisodes(pid, { status: 'error', error: result.message })
+        return
+      }
+      const page = pickOfficialEpisodes(result.payload, pid)
+      setEpisodes(pid, {
+        status: 'ready',
+        items: page.episodes,
+        loadMoreKey: page.loadMoreKey,
+        error: '',
+      })
+    } catch {
+      if (epoch !== sessionEpoch || request !== episodeRequests.get(pid)) return
+      setEpisodes(pid, { status: 'error', error: '加载播客单集失败，请重试。' })
     }
-    const page = pickOfficialEpisodes(result.payload, pid)
-    setEpisodes(pid, {
-      status: 'ready',
-      items: page.episodes,
-      loadMoreKey: page.loadMoreKey,
-      error: '',
-    })
   }
 
   /** 单集列表的下一页 */
   async function loadMoreEpisodes(pid: string): Promise<void> {
     const current = episodes.value[pid]
-    if (!current || current.loadingMore || current.loadMoreKey === null) return
+    if (!current || current.loadingMore || current.loadMoreKey == null) return
     const epoch = sessionEpoch
     const request = (episodeRequests.get(pid) ?? 0) + 1
     episodeRequests.set(pid, request)
-    setEpisodes(pid, { loadingMore: true })
-    const result = await officialEpisodes(pid, current.loadMoreKey)
-    if (epoch !== sessionEpoch || request !== episodeRequests.get(pid)) return
+    setEpisodes(pid, { loadingMore: true, error: '' })
+    try {
+      const result = await officialEpisodes(pid, current.loadMoreKey)
+      if (epoch !== sessionEpoch || request !== episodeRequests.get(pid)) return
+      if (!result.ok) {
+        setEpisodes(pid, { loadingMore: false, error: result.message })
+        return
+      }
+      const page = pickOfficialEpisodes(result.payload, pid)
+      const latest = episodes.value[pid] ?? current
+      const existing = new Set(latest.items.map((episode) => episode.eid))
+      const added = page.episodes.filter((episode) => !existing.has(episode.eid))
+      if (added.length === 0 && page.loadMoreKey != null && Object.is(page.loadMoreKey, current.loadMoreKey)) {
+        setEpisodes(pid, { loadingMore: false, loadMoreKey: null, error: '没有新的单集了。' })
+        return
+      }
+      setEpisodes(pid, {
+        loadingMore: false,
+        items: [...latest.items, ...added],
+        loadMoreKey: page.loadMoreKey,
+        error: '',
+      })
+    } catch {
+      if (epoch !== sessionEpoch || request !== episodeRequests.get(pid)) return
+      setEpisodes(pid, { loadingMore: false, error: '加载更多单集失败，请重试。' })
+    }
+  }
+
+  async function loadFavorites(uid: string, reset = true): Promise<void> {
+    if (!uid) return
+    if (favoriteLoadingMore.value || (!reset && !hasMoreFavorites.value)) return
+    const request = ++favoriteEpoch
+    if (reset) {
+      favoriteStatus.value = 'loading'
+      favoriteError.value = ''
+      favoriteLoadMoreKey.value = null
+    } else {
+      favoriteLoadingMore.value = true
+      favoriteError.value = ''
+    }
+    const result = await officialFavorites(uid, reset ? undefined : favoriteLoadMoreKey.value)
+    if (request !== favoriteEpoch) return
     if (!result.ok) {
-      setEpisodes(pid, { loadingMore: false, error: result.message })
+      favoriteStatus.value = 'error'
+      favoriteError.value = result.message
+      favoriteLoadingMore.value = false
       return
     }
-    const page = pickOfficialEpisodes(result.payload, pid)
-    const latest = episodes.value[pid] ?? current
-    setEpisodes(pid, {
-      loadingMore: false,
-      items: [...latest.items, ...page.episodes],
-      loadMoreKey: page.loadMoreKey,
-    })
+    const page = pickOfficialFavoriteEpisodes(result.payload)
+    const seen = new Set(reset ? [] : favoriteEpisodes.value.map((episode) => episode.eid))
+    const incoming = page.episodes.filter((episode) => !seen.has(episode.eid))
+    favoriteEpisodes.value = reset ? incoming : [...favoriteEpisodes.value, ...incoming]
+    favoriteLoadMoreKey.value = page.loadMoreKey
+    favoriteStatus.value = 'ready'
+    favoriteError.value = ''
+    favoriteLoadingMore.value = false
   }
 
   function select(pid: string): void {
@@ -277,7 +333,7 @@ export const useOfficialStore = defineStore('official', () => {
   // ── 搜索 ──────────────────────────────────────────────
   // 只开放已实测的两种 type：PODCAST（纯播客）、ALL（混合，需过滤 HEADER/FOOTER/SEARCHED_USERS）
   const searchKeyword = ref('')
-  const searchType = ref<'PODCAST' | 'ALL'>('PODCAST')
+  const searchType = ref<'EPISODE' | 'PODCAST' | 'ALL'>('EPISODE')
   const searchStatus = ref<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
   const searchError = ref('')
   const searchPodcasts = ref<OfficialPodcast[]>([])
@@ -285,7 +341,7 @@ export const useOfficialStore = defineStore('official', () => {
   /** 递增序号：迟到的旧请求不得覆盖新关键词的结果 */
   let searchEpoch = 0
 
-  async function runSearch(rawKeyword?: string, type?: 'PODCAST' | 'ALL'): Promise<void> {
+  async function runSearch(rawKeyword?: string, type?: 'EPISODE' | 'PODCAST' | 'ALL'): Promise<void> {
     const keyword = (rawKeyword ?? searchKeyword.value).trim()
     searchKeyword.value = keyword
     if (type !== undefined) searchType.value = type
@@ -303,7 +359,8 @@ export const useOfficialStore = defineStore('official', () => {
     searchStatus.value = 'loading'
     searchError.value = ''
 
-    const result = await officialSearch(keyword, { type: searchType.value })
+    // 官方只确认了 PODCAST 与 ALL；单集筛选使用 ALL 响应后在本地过滤。
+    const result = await officialSearch(keyword, { type: searchType.value === 'PODCAST' ? 'PODCAST' : 'ALL' })
     if (epoch !== searchEpoch) return // 已有更新的请求，丢弃本次结果
 
     if (!result.ok) {
@@ -316,9 +373,9 @@ export const useOfficialStore = defineStore('official', () => {
 
     try {
       const page = normalizeSearchPayload(result.payload)
-      searchPodcasts.value = page.podcasts
-      searchEpisodes.value = page.episodes
-      searchStatus.value = page.podcasts.length + page.episodes.length === 0 ? 'empty' : 'ready'
+      searchPodcasts.value = searchType.value === 'EPISODE' ? [] : page.podcasts
+      searchEpisodes.value = searchType.value === 'PODCAST' ? [] : page.episodes
+      searchStatus.value = searchPodcasts.value.length + searchEpisodes.value.length === 0 ? 'empty' : 'ready'
     } catch (error) {
       // 结构不认识时明确报错，绝不静默当成空结果
       searchStatus.value = 'error'
@@ -351,6 +408,12 @@ export const useOfficialStore = defineStore('official', () => {
     listErrorCode.value = ''
     loadMoreKey.value = null
     episodes.value = {}
+    favoriteEpoch += 1
+    favoriteEpisodes.value = []
+    favoriteStatus.value = 'idle'
+    favoriteError.value = ''
+    favoriteLoadMoreKey.value = null
+    favoriteLoadingMore.value = false
     selectedPid.value = ''
   }
 
@@ -362,6 +425,12 @@ export const useOfficialStore = defineStore('official', () => {
     loadMoreKey,
     loadingMore,
     episodes,
+    favoriteEpisodes,
+    favoriteStatus,
+    favoriteError,
+    favoriteLoadMoreKey,
+    favoriteLoadingMore,
+    hasMoreFavorites,
     selectedPid,
     hasMore,
     count,
@@ -371,6 +440,7 @@ export const useOfficialStore = defineStore('official', () => {
     loadMoreSubscriptions,
     loadEpisodes,
     loadMoreEpisodes,
+    loadFavorites,
     select,
     resolveAudioUrl,
     searchKeyword,

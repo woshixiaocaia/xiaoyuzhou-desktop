@@ -65,6 +65,8 @@ export interface DesktopBridge {
   officialAuthLogout?: () => Promise<unknown>
   officialSubscriptions?: (cursor: unknown) => Promise<unknown>
   officialEpisodes?: (pid: string | null, cursor: unknown) => Promise<unknown>
+  officialListenHistory?: (cursor: unknown) => Promise<unknown>
+  officialFavorites?: (uid: string | null, cursor: unknown) => Promise<unknown>
   officialMediaUrl?: (eid: string | null) => Promise<unknown>
   officialSearch?: (keyword: string | null, options: unknown) => Promise<unknown>
 }
@@ -230,6 +232,8 @@ interface OfficialBridge {
   officialAuthLogout: () => Promise<unknown>
   officialSubscriptions: (cursor: unknown) => Promise<unknown>
   officialEpisodes: (pid: string | null, cursor: unknown) => Promise<unknown>
+  officialListenHistory?: (cursor: unknown) => Promise<unknown>
+  officialFavorites?: (uid: string | null, cursor: unknown) => Promise<unknown>
   officialMediaUrl: (eid: string | null) => Promise<unknown>
   officialSearch: (keyword: string | null, options: unknown) => Promise<unknown>
 }
@@ -360,6 +364,29 @@ export async function officialEpisodes(pid: string, cursor?: unknown): Promise<O
   const result = await callOfficial((bridge) => bridge.officialEpisodes(pid, cursor ?? null))
   if ('ok' in result && result.ok === false) return result as OfficialFailure
   return { ok: true, payload: (result as Record<string, unknown>).payload }
+}
+
+export async function officialListenHistory(cursor?: unknown): Promise<OfficialPayloadResult> {
+  const bridge = getOfficialBridge()
+  if (bridge === null || typeof bridge.officialListenHistory !== 'function') return officialFailure('NO_BRIDGE')
+  let raw: unknown
+  try { raw = await bridge.officialListenHistory(cursor ?? null) } catch { return officialFailure('IPC_FAILED') }
+  const value = asRecord(raw)
+  if (value === null) return officialFailure('INVALID_RESPONSE')
+  if (value.ok !== true) return officialFailure(typeof value.code === 'string' ? value.code : 'UNEXPECTED', typeof value.message === 'string' ? value.message : undefined)
+  return { ok: true, payload: value.payload }
+}
+
+export async function officialFavorites(uid: string, cursor?: unknown): Promise<OfficialPayloadResult> {
+  if (typeof uid !== 'string' || uid === '') return officialFailure('INVALID_ARGUMENT')
+  const bridge = getOfficialBridge()
+  if (bridge === null || typeof bridge.officialFavorites !== 'function') return officialFailure('NO_BRIDGE')
+  let raw: unknown
+  try { raw = await bridge.officialFavorites(uid, cursor ?? null) } catch { return officialFailure('IPC_FAILED') }
+  const value = asRecord(raw)
+  if (value === null) return officialFailure('INVALID_RESPONSE')
+  if (value.ok !== true) return officialFailure(typeof value.code === 'string' ? value.code : 'UNEXPECTED', typeof value.message === 'string' ? value.message : undefined)
+  return { ok: true, payload: value.payload }
 }
 
 export async function officialMediaUrl(eid: string): Promise<OfficialMediaResult> {  if (typeof eid !== 'string' || eid === '') return officialFailure('INVALID_ARGUMENT')

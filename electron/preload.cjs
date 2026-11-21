@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('desktop', {
   officialSubscriptions: (cursor) => ipcRenderer.invoke('official:subscriptions', cursor ?? null),
   officialEpisodes: (pid, cursor) =>
     ipcRenderer.invoke('official:episodes', typeof pid === 'string' ? pid : null, cursor ?? null),
+  officialListenHistory: (cursor) => ipcRenderer.invoke('official:listen-history', cursor ?? null),
+  officialFavorites: (uid, cursor) =>
+    ipcRenderer.invoke('official:favorites', typeof uid === 'string' ? uid : null, cursor ?? null),
   officialMediaUrl: (eid) => ipcRenderer.invoke('official:media', typeof eid === 'string' ? eid : null),
   officialSearch: (keyword, options) =>
     ipcRenderer.invoke(

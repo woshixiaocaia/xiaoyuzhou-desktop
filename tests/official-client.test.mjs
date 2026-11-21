@@ -342,3 +342,33 @@ test('二维码返回的 url 会被原样保留（不做拼接或改写）', asy
   const result = await client.startLogin()
   assert.equal(result.url, officialUrl)
 })
+
+test('手机收听历史：读取当前账号历史并补齐云端播放进度', async () => {
+  const transport = fakeTransport((request) => {
+    if (request.url.endsWith(ENDPOINTS.episodeHistory.path)) {
+      return json(200, { data: [{ episode: { eid: 'e1', pid: 'p1', title: '单集', duration: 100, isFinished: false, podcast: { title: '播客' } } }], loadMoreKey: 'next' })
+    }
+    if (request.url.endsWith(ENDPOINTS.playbackProgress.path)) {
+      return json(200, { data: [{ eid: 'e1', pid: 'p1', progress: 42, playedAt: '2026-11-21T10:00:00.000Z' }] })
+    }
+    throw new Error(`Unexpected endpoint: ${request.url}`)
+  })
+  const client = createOfficialClient({ transport, storage: fakeStorage({ access: 'a', refresh: 'r', user: { uid: 'u1' } }) })
+  const result = await client.fetchListenHistory()
+  assert.equal(result.ok, true)
+  assert.equal(result.payload.data[0].progress, 42)
+  assert.equal(result.payload.data[0].playedAt, '2026-11-21T10:00:00.000Z')
+  assert.equal(result.payload.loadMoreKey, 'next')
+  assert.deepEqual(JSON.parse(transport.calls[0].body), {})
+  assert.deepEqual(JSON.parse(transport.calls[1].body), { eids: ['e1'] })
+})
+
+test('收藏：只按当前会话 UID 和翻页游标读取个人喜欢列表', async () => {
+  const transport = fakeTransport(() => json(200, { data: [] }))
+  const client = createOfficialClient({ transport, storage: fakeStorage({ access: 'a', refresh: 'r', user: { uid: 'u1' } }) })
+  const invalid = await client.fetchFavorites('', 'next')
+  assert.equal(invalid.code, 'INVALID_ARGUMENT')
+  assert.equal(transport.calls.length, 0)
+  await client.fetchFavorites('u1', 'next')
+  assert.deepEqual(JSON.parse(transport.calls[0].body), { uid: 'u1', loadMoreKey: 'next' })
+})

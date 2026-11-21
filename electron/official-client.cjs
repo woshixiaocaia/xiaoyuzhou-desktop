@@ -27,6 +27,9 @@ const ENDPOINTS = {
   me: { host: HOSTS.webApi, method: 'GET', path: '/web/user/get-me' },
   subscriptions: { host: HOSTS.api, method: 'POST', path: '/v1/subscription/list' },
   episodes: { host: HOSTS.api, method: 'POST', path: '/v1/episode/list' },
+  episodeHistory: { host: HOSTS.api, method: 'POST', path: '/v1/episode-played/list-history' },
+  playbackProgress: { host: HOSTS.api, method: 'POST', path: '/v1/playback-progress/list' },
+  favorites: { host: HOSTS.api, method: 'POST', path: '/v1/pick/list-history' },
   media: { host: HOSTS.api, method: 'GET', path: '/v1/private-media/get' },
   // 依据第三方源码实现（cli-anything-xiaoyuzhoufm/utils/api_client.py），
   // 请求体为 {keyword, type, limit(字符串), loadMoreKey?}，需登录态。
@@ -363,6 +366,41 @@ function createOfficialClient({ transport, storage, userAgent }) {
     return authed(ENDPOINTS.episodes, { body })
   }
 
+  /** 读取账号收听历史，并补齐官方记录的播放进度；此请求只读取账号数据。 */
+  async function fetchListenHistory(loadMoreKey) {
+    const body = {}
+    if (loadMoreKey !== undefined && loadMoreKey !== null) body.loadMoreKey = loadMoreKey
+    const result = await authed(ENDPOINTS.episodeHistory, { body })
+    if (!result.ok) return result
+    const root = result.payload && typeof result.payload === 'object' ? result.payload : null
+    const nested = root?.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data : null
+    const items = Array.isArray(root?.data) ? root.data : Array.isArray(nested?.data) ? nested.data : null
+    if (items === null) return fail('PARSE', '收听历史格式无法识别')
+    const episodes = items.map((item) => item && typeof item.episode === 'object' && item.episode ? item.episode : item)
+    const eids = [...new Set(episodes.map((episode) => episode && typeof episode.eid === 'string' ? episode.eid : '').filter(Boolean))]
+    let progressById = new Map()
+    if (eids.length > 0) {
+      const progress = await authed(ENDPOINTS.playbackProgress, { body: { eids } })
+      if (!progress.ok) return progress
+      const progressData = progress.payload && Array.isArray(progress.payload.data) ? progress.payload.data : null
+      if (progressData === null) return fail('PARSE', '收听进度格式无法识别')
+      progressById = new Map(progressData.filter((entry) => entry && typeof entry.eid === 'string').map((entry) => [entry.eid, entry]))
+    }
+    const data = episodes.map((episode) => {
+      const progress = episode && typeof episode.eid === 'string' ? progressById.get(episode.eid) : null
+      return progress ? { ...episode, progress: progress.progress, playedAt: progress.playedAt ?? episode.playedAt } : episode
+    })
+    return { ok: true, payload: { data, loadMoreKey: nested?.loadMoreKey ?? root?.loadMoreKey ?? null } }
+  }
+
+  /** 读取个人主页的喜欢列表；只请求当前登录账号自己的公开 uid。 */
+  async function fetchFavorites(uid, loadMoreKey) {
+    if (typeof uid !== 'string' || uid === '') return fail('INVALID_ARGUMENT', '缺少账号标识')
+    const body = { uid }
+    if (loadMoreKey !== undefined && loadMoreKey !== null) body.loadMoreKey = loadMoreKey
+    return authed(ENDPOINTS.favorites, { body })
+  }
+
   /** 付费单集的媒体地址（普通单集的地址在单集对象里已带） */
   async function fetchMediaUrl(eid) {
     if (typeof eid !== 'string' || eid === '') return fail('INVALID_ARGUMENT', '缺少单集标识')
@@ -383,6 +421,8 @@ function createOfficialClient({ transport, storage, userAgent }) {
     logout,
     fetchSubscriptions,
     fetchEpisodes,
+    fetchListenHistory,
+    fetchFavorites,
     search,
     fetchMediaUrl,
     // 供测试观察，不参与业务

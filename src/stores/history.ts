@@ -2,6 +2,8 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { usePlayerStore } from '@/stores/player'
+import { officialListenHistory } from '@/lib/desktop'
+import { normalizeOfficialEpisode, pickOfficialPage } from '@/lib/official-contract'
 
 /**
  * 收听历史与播放进度。
@@ -39,6 +41,8 @@ export interface HistoryEntry {
   /** 是否已听完：听完的节目下次从头开始，不回到旧位置 */
   completed: boolean
   updatedAt: number
+  /** 标记该单集已从小宇宙账号同步过 */
+  phoneSynced?: boolean
 }
 
 /** 由「来源 + 稳定 ID」生成唯一键；已经带前缀的 id 不会重复加前缀 */
@@ -71,6 +75,7 @@ function normalizeEntry(raw: unknown): HistoryEntry | null {
     duration: toNumber(record.duration),
     completed: record.completed === true,
     updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : 0,
+    phoneSynced: record.phoneSynced === true,
   }
 }
 
@@ -111,6 +116,11 @@ export const useHistoryStore = defineStore('history', () => {
   const lastSaveAt = ref(0)
   /** 最近一次写入是否成功，供界面提示「进度没能保存」 */
   const lastError = ref('')
+  const phoneSyncStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const phoneSyncError = ref('')
+  const phoneLoadMoreKey = ref<unknown>(null)
+  const phoneLoadingMore = ref(false)
+  let phoneSyncEpoch = 0
 
   let bound = false
 
@@ -180,6 +190,7 @@ export const useHistoryStore = defineStore('history', () => {
       duration: toNumber(input.duration) || previous?.duration || 0,
       completed: input.completed === true,
       updatedAt: Date.now(),
+      phoneSynced: previous?.phoneSynced,
     })
     persist(input.force === true)
   }
@@ -203,6 +214,88 @@ export const useHistoryStore = defineStore('history', () => {
   function clear(): void {
     entries.value = []
     persist(true)
+  }
+
+  const hasPhoneMore = computed(() => phoneLoadMoreKey.value !== null && phoneLoadMoreKey.value !== undefined)
+
+  /** 从当前登录的小宇宙账号拉取手机端历史，只读取账号数据并合并到本机记录。 */
+  async function syncPhoneHistory(reset = true): Promise<void> {
+    if (phoneSyncStatus.value === 'loading' || phoneLoadingMore.value) return
+    if (!reset && !hasPhoneMore.value) return
+    const request = ++phoneSyncEpoch
+    if (reset) {
+      phoneSyncStatus.value = 'loading'
+      phoneSyncError.value = ''
+      phoneLoadMoreKey.value = null
+    } else {
+      phoneLoadingMore.value = true
+      phoneSyncError.value = ''
+    }
+    const result = await officialListenHistory(reset ? undefined : phoneLoadMoreKey.value)
+    if (request !== phoneSyncEpoch) return
+    if (!result.ok) {
+      phoneSyncStatus.value = reset ? 'error' : 'ready'
+      phoneSyncError.value = result.message
+      phoneLoadingMore.value = false
+      return
+    }
+    const page = pickOfficialPage(result.payload)
+    const remote: HistoryEntry[] = []
+    for (const raw of page.items) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+      const row = raw as Record<string, unknown>
+      const episodeData = row.episode && typeof row.episode === 'object' && !Array.isArray(row.episode)
+        ? row.episode as Record<string, unknown>
+        : row
+      const episode = normalizeOfficialEpisode(episodeData)
+      if (!episode || !episode.pid) continue
+      const podcast = episodeData.podcast && typeof episodeData.podcast === 'object' && !Array.isArray(episodeData.podcast)
+        ? episodeData.podcast as Record<string, unknown>
+        : null
+      const playedAt = typeof row.playedAt === 'string' ? row.playedAt : typeof episodeData.playedAt === 'string' ? episodeData.playedAt : ''
+      const parsedTime = playedAt ? Date.parse(playedAt) : Number.NaN
+      const pubTime = episode.pubDate ? Date.parse(episode.pubDate) : Number.NaN
+      const rawProgress = typeof row.progress === 'number' ? row.progress : episodeData.progress
+      const position = typeof rawProgress === 'number' && Number.isFinite(rawProgress) && rawProgress > 0 ? rawProgress : 0
+      const completed = episodeData.isFinished === true
+      remote.push({
+        key: episodeKey('official', episode.eid),
+        source: 'official',
+        id: episode.eid,
+        title: episode.title,
+        podcast: typeof podcast?.title === 'string' ? podcast.title : '小宇宙播客',
+        podcastId: episode.pid,
+        position,
+        duration: episode.durationSeconds,
+        completed,
+        updatedAt: Number.isFinite(parsedTime) ? parsedTime : Number.isFinite(pubTime) ? pubTime : 0,
+        phoneSynced: true,
+      })
+    }
+    const merged: HistoryEntry[] = [...entries.value]
+    for (const incoming of remote) {
+      const index = merged.findIndex((entry) => entry.key === incoming.key)
+      if (index < 0) {
+        merged.push(incoming)
+        continue
+      }
+      const current = merged[index]
+      if (!current) {
+        merged[index] = incoming
+        continue
+      }
+      // 同一集以更新的进度为准；保留本机最近操作，避免旧手机快照回退进度。
+      merged[index] = incoming.updatedAt >= current.updatedAt
+        ? incoming
+        : { ...current, phoneSynced: true }
+    }
+    merged.sort((a, b) => b.updatedAt - a.updatedAt)
+    entries.value = merged.slice(0, MAX_ENTRIES)
+    persist(true)
+    phoneLoadMoreKey.value = page.loadMoreKey
+    phoneSyncStatus.value = 'ready'
+    phoneSyncError.value = ''
+    phoneLoadingMore.value = false
   }
 
   /** 把 store 绑定到播放器：只绑定一次，避免重复 watcher */
@@ -284,6 +377,11 @@ export const useHistoryStore = defineStore('history', () => {
     entries,
     recent,
     lastError,
+    phoneSyncStatus,
+    phoneSyncError,
+    phoneLoadingMore,
+    hasPhoneMore,
+    syncPhoneHistory,
     record,
     resumePosition,
     isCompleted,

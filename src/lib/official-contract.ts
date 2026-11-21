@@ -25,6 +25,12 @@ export const OFFICIAL_ENDPOINTS = {
   subscriptionList: { method: 'POST', path: '/v1/subscription/list' },
   /** 某个播客的单集列表 */
   episodeList: { method: 'POST', path: '/v1/episode/list' },
+  /** 当前账号的收听历史 */
+  episodeHistory: { method: 'POST', path: '/v1/episode-played/list-history' },
+  /** 批量读取单集的账号播放进度 */
+  playbackProgress: { method: 'POST', path: '/v1/playback-progress/list' },
+  /** 个人主页的喜欢列表，客户端只筛出单集收藏 */
+  favorites: { method: 'POST', path: '/v1/pick/list-history' },
   /** 付费单集的媒体地址 */
   privateMediaGet: { method: 'GET', path: '/v1/private-media/get' },
 } as const
@@ -235,6 +241,24 @@ export function pickOfficialEpisodes(
   const episodes: OfficialEpisode[] = []
   for (const item of page.items) {
     const episode = normalizeOfficialEpisode(item, fallbackPid)
+    if (episode !== null) episodes.push(episode)
+  }
+  return { episodes, loadMoreKey: page.loadMoreKey }
+}
+
+/** 喜欢列表混有播客、单集等内容；这里只展示用户收藏的单集。 */
+export function pickOfficialFavoriteEpisodes(payload: unknown): {
+  episodes: OfficialEpisode[]
+  loadMoreKey: unknown
+} {
+  const page = pickOfficialPage(payload)
+  const episodes: OfficialEpisode[] = []
+  for (const item of page.items) {
+    const record = asRecord(item)
+    if (record === null) continue
+    const raw = asRecord(record.episode) ?? asRecord(record.item) ?? record
+    if (record.type && record.type !== 'EPISODE') continue
+    const episode = normalizeOfficialEpisode(raw)
     if (episode !== null) episodes.push(episode)
   }
   return { episodes, loadMoreKey: page.loadMoreKey }

@@ -9,6 +9,7 @@ const {
   normalizeOfficialEpisode,
   pickOfficialPodcasts,
   pickOfficialEpisodes,
+  pickOfficialFavoriteEpisodes,
 } = await import('@/lib/official-contract')
 
 // ── 分页：三种已知形状 ──────────────────────────────────────────
@@ -204,6 +205,9 @@ test('端点常量与审计记录一致（仅 method/path，不含主机与凭�
     path: '/v1/subscription/list',
   })
   assert.deepEqual(OFFICIAL_ENDPOINTS.episodeList, { method: 'POST', path: '/v1/episode/list' })
+  assert.deepEqual(OFFICIAL_ENDPOINTS.episodeHistory, { method: 'POST', path: '/v1/episode-played/list-history' })
+  assert.deepEqual(OFFICIAL_ENDPOINTS.playbackProgress, { method: 'POST', path: '/v1/playback-progress/list' })
+  assert.deepEqual(OFFICIAL_ENDPOINTS.favorites, { method: 'POST', path: '/v1/pick/list-history' })
   assert.deepEqual(OFFICIAL_ENDPOINTS.privateMediaGet, {
     method: 'GET',
     path: '/v1/private-media/get',
@@ -214,4 +218,14 @@ test('端点常量与审计记录一致（仅 method/path，不含主机与凭�
   assert.ok(!/http/i.test(serialized), '端点常量不应包含协议/主机')
   assert.ok(!/authorization/i.test(serialized))
   assert.ok(!/cookie/i.test(serialized))
+})
+
+test('收藏列表：展开单集实体，跳过被喜欢的播客和无效条目', () => {
+  const result = pickOfficialFavoriteEpisodes({ data: [
+    { type: 'EPISODE', episode: { eid: 'e1', pid: 'p1', title: '收藏单集' } },
+    { type: 'PODCAST', podcast: { pid: 'p2', title: '播客' } },
+    { type: 'EPISODE', episode: { pid: 'p1', title: '缺少 eid' } },
+  ], loadMoreKey: 'next' })
+  assert.deepEqual(result.episodes.map((episode) => episode.eid), ['e1'])
+  assert.equal(result.loadMoreKey, 'next')
 })

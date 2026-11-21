@@ -6,6 +6,8 @@ import OfficialView from '@/views/OfficialView.vue'
 import SearchView from '@/views/SearchView.vue'
 import SubscriptionsView from '@/views/SubscriptionsView.vue'
 import SettingsView from '@/views/SettingsView.vue'
+import PodcastView from '@/views/PodcastView.vue'
+import FavoritesView from '@/views/FavoritesView.vue'
 
 /**
  * 路由表：URL 与组件的对应关系。
@@ -34,6 +36,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '搜索' },
   },
   {
+    path: '/podcast/:pid',
+    name: 'podcast',
+    component: PodcastView,
+    meta: { title: '播客单集' },
+  },
+  {
     path: '/subscriptions',
     name: 'subscriptions',
     component: SubscriptionsView,
@@ -50,6 +58,12 @@ const routes: RouteRecordRaw[] = [
     name: 'history',
     component: HistoryView,
     meta: { title: '播放历史' },
+  },
+  {
+    path: '/favorites',
+    name: 'favorites',
+    component: FavoritesView,
+    meta: { title: '收藏' },
   },
   {
     // 兜底：任何人手动输错路径都退回「发现」

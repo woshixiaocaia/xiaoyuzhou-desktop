@@ -37,11 +37,28 @@ test('搜索成功：ALL 混合结果里跳过 HEADER/FOOTER，只保留内容�
     },
   }))
   const official = fresh()
-  await official.runSearch('测试')
+  await official.runSearch('测试', 'ALL')
   assert.equal(official.searchStatus, 'ready')
   assert.equal(official.searchPodcasts.length, 1)
   assert.equal(official.searchEpisodes.length, 1)
   assert.equal(official.searchPodcasts[0].pid, 'p1')
+})
+
+test('单集搜索默认显示篇目，不把播客合集混进结果', async () => {
+  const calls = []
+  installBridge(async (_keyword, options) => {
+    calls.push(options)
+    return { ok: true, payload: { data: [
+      { type: 'PODCAST', pid: 'p1', title: '节目合集' },
+      { type: 'EPISODE', eid: 'e1', pid: 'p1', title: '匹配的单集' },
+    ] } }
+  })
+  const official = fresh()
+  await official.runSearch('标题里的词')
+  assert.deepEqual(calls, [{ type: 'ALL' }])
+  assert.deepEqual(official.searchPodcasts, [])
+  assert.deepEqual(official.searchEpisodes.map((episode) => episode.eid), ['e1'])
+  assert.equal(official.searchType, 'EPISODE')
 })
 
 test('空结果进入 empty，而不是 error', async () => {
@@ -77,8 +94,8 @@ test('旧请求的迟到响应不覆盖新关键词结果', async () => {
   )
   const official = fresh()
 
-  const first = official.runSearch('旧词')
-  const second = official.runSearch('新词')
+  const first = official.runSearch('旧词', 'PODCAST')
+  const second = official.runSearch('新词', 'PODCAST')
   assert.equal(pending.length, 2)
 
   // 先返回「新词」的结果，再让「旧词」迟到

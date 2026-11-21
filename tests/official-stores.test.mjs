@@ -34,6 +34,10 @@ function installBridge(overrides = {}) {
       calls.push(['episodes', pid, cursor])
       return { ok: true, payload: { data: [], loadMoreKey: null } }
     },
+    officialFavorites: async (uid, cursor) => {
+      calls.push(['favorites', uid, cursor])
+      return { ok: true, payload: { data: [], loadMoreKey: null } }
+    },
     officialMediaUrl: async (eid) => {
       calls.push(['media', eid])
       return { ok: true, url: 'https://cdn.example.com/x.m4a' }
@@ -283,4 +287,57 @@ test('reset 会清空官方数据（登出后不残留）', async () => {
   assert.equal(official.count, 0)
   assert.equal(official.selectedPid, '')
   assert.equal(official.listStatus, 'idle')
+})
+
+test('播客分页：使用下一页游标追加单集并过滤重复项', async () => {
+  let calls = 0
+  installBridge({ officialEpisodes: async (pid, cursor) => {
+    calls += 1
+    if (calls === 1) return { ok: true, payload: { data: [{ eid: 'e1', pid, title: '第一集' }], loadMoreKey: 'page-2' } }
+    assert.equal(cursor, 'page-2')
+    return { ok: true, payload: { data: [{ eid: 'e1', pid }, { eid: 'e2', pid, title: '第二集' }], loadMoreKey: null } }
+  } })
+  const official = freshOfficial()
+  await official.loadEpisodes('p1')
+  await official.loadMoreEpisodes('p1')
+  assert.deepEqual(official.episodes.p1.items.map((episode) => episode.eid), ['e1', 'e2'])
+  assert.equal(official.episodes.p1.loadingMore, false)
+  assert.equal(official.episodes.p1.loadMoreKey, null)
+})
+
+test('播客分页失败：保留游标、显示错误并允许重试', async () => {
+  let calls = 0
+  installBridge({ officialEpisodes: async (pid, cursor) => {
+    calls += 1
+    if (cursor === null || cursor === undefined) return { ok: true, payload: { data: [{ eid: 'e1', pid }], loadMoreKey: 'page-2' } }
+    if (calls === 2) return { ok: false, code: 'NETWORK', message: '网络连接失败' }
+    return { ok: true, payload: { data: [{ eid: 'e2', pid }], loadMoreKey: null } }
+  } })
+  const official = freshOfficial()
+  await official.loadEpisodes('p1')
+  await official.loadMoreEpisodes('p1')
+  assert.equal(official.episodes.p1.error, '网络连接失败')
+  assert.equal(official.episodes.p1.loadMoreKey, 'page-2')
+  await official.loadMoreEpisodes('p1')
+  assert.deepEqual(official.episodes.p1.items.map((episode) => episode.eid), ['e1', 'e2'])
+  assert.equal(official.episodes.p1.error, '')
+})
+
+test('收藏：从喜欢列表只保留单集，并分页追加', async () => {
+  const observed = []
+  installBridge({ officialFavorites: async (uid, cursor) => {
+    observed.push(['favorites', uid, cursor])
+    if (cursor == null) return { ok: true, payload: { data: [
+      { type: 'EPISODE', episode: { eid: 'e1', pid: 'p1', title: '喜欢的一集' } },
+      { type: 'PODCAST', podcast: { pid: 'p2', title: '喜欢的播客' } },
+    ], loadMoreKey: 'next' } }
+    return { ok: true, payload: { data: [{ type: 'EPISODE', episode: { eid: 'e2', pid: 'p1', title: '另一集' } }], loadMoreKey: null } }
+  } })
+  const official = freshOfficial()
+  await official.loadFavorites('u1')
+  assert.deepEqual(official.favoriteEpisodes.map((episode) => episode.eid), ['e1'])
+  await official.loadFavorites('u1', false)
+  assert.deepEqual(official.favoriteEpisodes.map((episode) => episode.eid), ['e1', 'e2'])
+  assert.equal(official.favoriteStatus, 'ready')
+  assert.equal(observed.some((call) => call[1] === 'u1' && call[2] === 'next'), true)
 })

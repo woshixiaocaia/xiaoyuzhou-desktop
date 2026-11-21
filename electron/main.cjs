@@ -134,6 +134,20 @@ ipcMain.handle('official:episodes', (_event, pid, cursor) =>
   ),
 )
 
+ipcMain.handle('official:listen-history', (_event, cursor) =>
+  runOfficial(() => getOfficialClient().fetchListenHistory(cursor ?? undefined)),
+)
+
+ipcMain.handle('official:favorites', (_event, uid, cursor) =>
+  runOfficial(() => {
+    const user = getOfficialClient().currentUser()
+    if (!user || typeof uid !== 'string' || uid === '' || uid !== user.uid) {
+      return { ok: false, code: 'INVALID_ARGUMENT', message: '只能读取当前登录账号的收藏列表' }
+    }
+    return getOfficialClient().fetchFavorites(user.uid, cursor ?? undefined)
+  }),
+)
+
 ipcMain.handle('official:media', (_event, eid) =>
   runOfficial(() => getOfficialClient().fetchMediaUrl(typeof eid === 'string' ? eid : '')),
 )
