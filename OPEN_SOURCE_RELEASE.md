@@ -4,13 +4,13 @@
 
 - 已有 Windows 便携版，以及独立的 NSIS 安装程序构建入口。
 - 已补充备份、二进制产物、环境变量、凭据文件与签名私钥的忽略规则。
-- 尚未创建或上传公开 GitHub 仓库。
-- 公开作者署名为 woshixiaocaia，项目采用 MIT License；LICENSE、第三方声明及 package.json 许可元数据均已补齐。公开仓库地址尚待确定。
+- GitHub 公开仓库已创建并推送 v0.1.0 源码： https://github.com/woshixiaocaia/xiaoyuzhou-desktop
+- 公开作者署名为 woshixiaocaia，项目采用 MIT License；LICENSE、第三方声明及 package.json 许可元数据均已补齐；v0.1.0 预发布已发布。
 - 仓库设为 public 不等于自动授予完整开源使用权，公开发布前需要明确许可证。
 
-## 第一次公开前
+## 首次公开核对
 
-1. MIT License 与署名 woshixiaocaia 已确定；接下来确认 GitHub 仓库地址和对外项目名称。
+1. MIT License、署名 woshixiaocaia、仓库地址和项目名称均已确定。
 2. 在 README 中突出非官方客户端身份，说明支持范围、账号数据的本机保存方式和接口依赖。
 3. 核对代码、图标与第三方参考的来源，保留适用的版权与许可说明。
 4. 仅提交源码、测试、配置、锁文件和文档，不提交 node_modules、release、dist、本地备份、登录数据、签名文件或真实账号截图。

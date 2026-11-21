@@ -1,4 +1,4 @@
-﻿# 小宇宙 Desktop
+# 小宇宙 Desktop
 
 一个安静、轻巧的非官方 Windows 桌面播客播放器。基于 Electron、Vue 3、TypeScript 和 Pinia。
 
@@ -51,7 +51,7 @@ npm run electron:installer
 
 `electron:dist` 生成 Windows 便携版到 release/。`electron:installer` 生成 Windows x64 安装程序到 release/installer/，提供安装向导、目录选择、快捷方式和卸载入口。不要用旧版 exe 判断新版源码效果。
 
-开源与版本发布准备见 OPEN_SOURCE_RELEASE.md。公开署名为 woshixiaocaia，项目采用 MIT License。公开仓库地址尚待确定，当前尚未上传公开仓库。
+开源与版本发布说明见 OPEN_SOURCE_RELEASE.md。公开署名为 woshixiaocaia，项目采用 MIT License。GitHub 公开仓库：[woshixiaocaia/xiaoyuzhou-desktop](https://github.com/woshixiaocaia/xiaoyuzhou-desktop)。当前版本为 v0.1.0 预发布。
 
 ## 目录
 
