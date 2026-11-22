@@ -363,12 +363,28 @@ test('手机收听历史：读取当前账号历史并补齐云端播放进度',
   assert.deepEqual(JSON.parse(transport.calls[1].body), { eids: ['e1'] })
 })
 
-test('收藏：只按当前会话 UID 和翻页游标读取个人喜欢列表', async () => {
+test('收藏：按当前会话读取收藏，游标保留原形', async () => {
   const transport = fakeTransport(() => json(200, { data: [] }))
   const client = createOfficialClient({ transport, storage: fakeStorage({ access: 'a', refresh: 'r', user: { uid: 'u1' } }) })
   const invalid = await client.fetchFavorites('', 'next')
   assert.equal(invalid.code, 'INVALID_ARGUMENT')
   assert.equal(transport.calls.length, 0)
   await client.fetchFavorites('u1', 'next')
-  assert.deepEqual(JSON.parse(transport.calls[0].body), { uid: 'u1', loadMoreKey: 'next' })
+  assert.deepEqual(JSON.parse(transport.calls[0].body), { limit: 20, loadMoreKey: 'next' })
+})
+
+
+test('收藏使用已验证的客户端头，详情按单集 ID 独立获取', async () => {
+  const transport = fakeTransport(() => json(200, { data: { eid: 'old-episode' } }))
+  const client = createOfficialClient({ transport, storage: fakeStorage({ access: 'a', refresh: 'r', user: { uid: 'u1' } }) })
+  await client.fetchFavorites('u1')
+  assert.equal(transport.calls[0].headers.OS, 'ios')
+  assert.equal(transport.calls[0].headers.BundleID, 'app.podcast.cosmos')
+  assert.equal(transport.calls[0].url, 'https://api.xiaoyuzhoufm.com/v1/favorite/list')
+  const result = await client.fetchEpisode('old-episode')
+  assert.equal(result.payload.data.eid, 'old-episode')
+  assert.equal(transport.calls[1].url, 'https://api.xiaoyuzhoufm.com/v1/episode/get?eid=old-episode')
+  assert.equal(transport.calls[1].method, 'GET')
+  assert.equal((await client.fetchEpisode('')).code, 'INVALID_ARGUMENT')
+  assert.equal(transport.calls.length, 2)
 })

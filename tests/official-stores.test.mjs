@@ -341,3 +341,19 @@ test('收藏：从喜欢列表只保留单集，并分页追加', async () => {
   assert.equal(official.favoriteStatus, 'ready')
   assert.equal(observed.some((call) => call[1] === 'u1' && call[2] === 'next'), true)
 })
+
+
+test('对象翻页游标通过 structured clone，保持服务端参数不变', async () => {
+  let count = 0
+  installBridge({ officialEpisodes: async (pid, cursor) => {
+    if (++count === 1) return { ok: true, payload: { data: [{ eid: 'e1', pid }], loadMoreKey: { pubDate: '2026-01-01', direction: 'NEXT' } } }
+    const cloned = structuredClone(cursor)
+    assert.deepEqual(cloned, { pubDate: '2026-01-01', direction: 'NEXT' })
+    return { ok: true, payload: { data: [{ eid: 'e2', pid }], loadMoreKey: null } }
+  } })
+  const official = freshOfficial()
+  await official.loadEpisodes('p1')
+  await official.loadMoreEpisodes('p1')
+  assert.deepEqual(official.episodes.p1.items.map(e => e.eid), ['e1', 'e2'])
+  assert.equal(official.episodes.p1.error, '')
+})

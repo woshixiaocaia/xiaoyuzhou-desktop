@@ -14,7 +14,7 @@ function loadMore(): void {
   if (account.isLoggedIn && account.user?.uid) void official.loadFavorites(account.user.uid, false)
 }
 onMounted(refresh)
-watch(() => account.isLoggedIn, refresh)
+watch(() => account.isLoggedIn ? account.user?.uid : '', refresh)
 </script>
 
 <template>
@@ -22,7 +22,7 @@ watch(() => account.isLoggedIn, refresh)
     <header class="page-heading">
       <div>
         <span class="eyebrow">YOUR SAVED EPISODES</span>
-        <h1>喜欢的单集<span class="accent">.</span></h1>
+        <h1>收藏的单集<span class="accent">.</span></h1>
         <p>读取你在手机小宇宙里收藏的单集。</p>
       </div>
       <button v-if="account.isLoggedIn" class="button subtle" :disabled="official.favoriteStatus === 'loading'" @click="refresh">
@@ -32,7 +32,7 @@ watch(() => account.isLoggedIn, refresh)
 
     <div v-if="!account.isLoggedIn" class="empty-state">
       <AppIcon name="star" :size="38" /><h2>登录后同步手机收藏</h2>
-      <p>连接同一个小宇宙账号，即可读取个人主页里喜欢的单集。</p>
+      <p>连接同一个小宇宙账号，即可读取个人主页里收藏的单集。</p>
       <RouterLink to="/official" class="button primary">连接我的账号<AppIcon name="arrow" :size="16" /></RouterLink>
     </div>
     <p v-else-if="official.favoriteStatus === 'loading'" class="loading-message" role="status">正在读取你的收藏…</p>
@@ -49,7 +49,7 @@ watch(() => account.isLoggedIn, refresh)
     </div>
     <div v-else-if="official.favoriteStatus === 'ready'" class="empty-state compact">
       <AppIcon name="star" :size="34" /><h2>还没有收藏的单集</h2>
-      <p>在小宇宙 App 收藏喜欢的单集后，可以在这里刷新查看。</p>
+      <p>在小宇宙 App 收藏收藏的单集后，可以在这里刷新查看。</p>
     </div>
   </section>
 </template>

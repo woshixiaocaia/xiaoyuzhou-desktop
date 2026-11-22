@@ -148,6 +148,10 @@ ipcMain.handle('official:favorites', (_event, uid, cursor) =>
   }),
 )
 
+ipcMain.handle('official:episode', (_event, eid) =>
+  runOfficial(() => getOfficialClient().fetchEpisode(typeof eid === 'string' ? eid : '')),
+)
+
 ipcMain.handle('official:media', (_event, eid) =>
   runOfficial(() => getOfficialClient().fetchMediaUrl(typeof eid === 'string' ? eid : '')),
 )

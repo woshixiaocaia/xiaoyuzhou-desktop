@@ -65,3 +65,28 @@ test('手机历史分页失败时保留已有记录并允许重试', async () =>
   assert.deepEqual(history.entries.map((entry) => entry.id).sort(), ['e1', 'e2'])
   assert.equal(history.phoneSyncStatus, 'ready')
 })
+
+
+test('账号切换隔离历史，迟到响应不能写入另一账号', async () => {
+  storage.clear()
+  let finish
+  installBridge(() => new Promise(resolve => { finish = resolve }))
+  setActivePinia(createPinia())
+  const history = useHistoryStore()
+  history.setAccount('alice')
+  const pending = history.syncPhoneHistory()
+  history.setAccount('bob')
+  finish({ ok: true, payload: { data: [{ eid: 'late', pid: 'p1' }] } })
+  await pending
+  assert.equal(history.entries.length, 0)
+  installBridge(async () => ({ ok: true, payload: { data: [{ eid: 'bob-episode', pid: 'p1', pubDate: '2026-11-20T12:00:00Z' }] } }))
+  await history.syncPhoneHistory()
+  assert.equal(history.entries[0].updatedAt, 0, '发布时间不能冒充收听时间')
+  history.setAccount('alice')
+  assert.equal(history.entries.length, 0)
+  history.clear()
+  history.setAccount('bob')
+  assert.equal(history.entries[0].id, 'bob-episode')
+  history.setAccount('')
+  assert.equal(history.entries.length, 0)
+})

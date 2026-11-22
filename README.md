@@ -4,7 +4,7 @@
 
 ## 使用
 
-打开 release/Xiaoyuzhou-0.1.0-portable.exe 即可使用，不需要安装 Node.js。
+打开 release/Xiaoyuzhou-0.2.0-portable.exe 即可使用，不需要安装 Node.js。
 
 - **RSS 收听**：打开「我的订阅」→「RSS 订阅」，粘贴公开的 RSS 2.0 或 Atom 地址。
 - **连接账号**：点击左下角账号入口，获取二维码，用手机小宇宙 App 扫描并确认。
@@ -25,9 +25,9 @@
 
 ## 本地数据
 
-RSS 订阅地址、收听历史、进度和设置保存在应用的本地数据目录。凭据仅在主进程内使用，并由 safeStorage 加密保存。应用不保存可复用的音频临时 URL，不会自动把本机历史同步到云端。退出账号保留本机 RSS 订阅和历史；它们是这台电脑共用的本地记录。
+RSS 订阅地址、收听历史、进度和设置保存在应用的本地数据目录。凭据仅在主进程内使用，并由 safeStorage 加密保存。应用不保存可复用的音频临时 URL，不会自动把本机历史同步到云端。手机历史与进度可以拉取到电脑；导入的账号记录和登录期间的官方播放记录按账号隔离，退出后隐藏，重新登录可恢复。RSS 和旧版本的本机历史继续保留。
 
-旧版收听记录可继续读取；缺少播客标识的历史，可能需要先到订阅页打开该播客，再返回历史页继续播放。RSS 源已移除的单集可能无法重新获取。
+旧版收听记录可继续读取；官方历史按单集标识获取最新详情与播放地址，不依赖播客第一页是否包含该单集。RSS 源已移除的单集可能无法重新获取。
 
 ## 开发
 
@@ -51,7 +51,7 @@ npm run electron:installer
 
 `electron:dist` 生成 Windows 便携版到 release/。`electron:installer` 生成 Windows x64 安装程序到 release/installer/，提供安装向导、目录选择、快捷方式和卸载入口。不要用旧版 exe 判断新版源码效果。
 
-开源与版本发布说明见 OPEN_SOURCE_RELEASE.md。公开署名为 woshixiaocaia，项目采用 MIT License。GitHub 公开仓库：[woshixiaocaia/xiaoyuzhou-desktop](https://github.com/woshixiaocaia/xiaoyuzhou-desktop)。当前版本为 v0.1.0 预发布。
+开源与版本发布说明见 OPEN_SOURCE_RELEASE.md。公开署名为 woshixiaocaia，项目采用 MIT License。GitHub 公开仓库：[woshixiaocaia/xiaoyuzhou-desktop](https://github.com/woshixiaocaia/xiaoyuzhou-desktop)。本分支版本为 v0.2.0；公开发布状态请以 GitHub Releases 为准。
 
 ## 目录
 
@@ -72,3 +72,11 @@ npm run electron:installer
 Copyright (c) 2026 woshixiaocaia。项目原创代码采用 [MIT License](LICENSE)。第三方依赖保留各自的许可和版权声明，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 项目许可证不授予对第三方播客内容、服务名称、封面或商标的权利。
+
+## 0.2.0 更新
+
+- 修复对象翻页游标无法通过桌面通信造成的“加载更多”失效。
+- 播客使用独立页面显示全部单集，可继续分页加载。
+- 搜索默认展示单集，仍可切换到播客或全部内容。
+- 收藏读取 `/v1/favorite/list`，与个人主页的“喜欢”区分。
+- 收听历史读取手机账号记录及进度，按账号隔离；本次仅从手机读取，电脑进度不会回传。

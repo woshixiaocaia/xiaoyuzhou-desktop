@@ -43,6 +43,7 @@ export interface HistoryEntry {
   updatedAt: number
   /** 标记该单集已从小宇宙账号同步过 */
   phoneSynced?: boolean
+  ownerUid?: string
 }
 
 /** 由「来源 + 稳定 ID」生成唯一键；已经带前缀的 id 不会重复加前缀 */
@@ -76,6 +77,7 @@ function normalizeEntry(raw: unknown): HistoryEntry | null {
     completed: record.completed === true,
     updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : 0,
     phoneSynced: record.phoneSynced === true,
+    ownerUid: typeof record.ownerUid === 'string' ? record.ownerUid : undefined,
   }
 }
 
@@ -97,7 +99,13 @@ export function readStoredHistory(storage: Storage | undefined): HistoryEntry[] 
       const entry = normalizeEntry(item)
       if (entry !== null) result.push(entry)
     }
-    return result.slice(0, MAX_ENTRIES)
+    const counts = new Map<string, number>()
+    return result.filter(entry => {
+      const owner = entry.ownerUid || ''
+      const count = counts.get(owner) || 0
+      counts.set(owner, count + 1)
+      return count < MAX_ENTRIES
+    })
   } catch {
     return []
   }
@@ -112,7 +120,19 @@ export const useHistoryStore = defineStore('history', () => {
     }
   }
 
-  const entries = ref<HistoryEntry[]>(readStoredHistory(storage()))
+  const storedEntries = ref<HistoryEntry[]>(readStoredHistory(storage()))
+  const accountUid = ref('')
+  const entries = computed(() => storedEntries.value.filter(entry => !entry.ownerUid || entry.ownerUid === accountUid.value))
+
+  function setAccount(uid: string): void {
+    if (uid === accountUid.value) return
+    phoneSyncEpoch += 1
+    accountUid.value = uid
+    phoneSyncStatus.value = 'idle'
+    phoneSyncError.value = ''
+    phoneLoadMoreKey.value = null
+    phoneLoadingMore.value = false
+  }
   const lastSaveAt = ref(0)
   /** 最近一次写入是否成功，供界面提示「进度没能保存」 */
   const lastError = ref('')
@@ -136,7 +156,7 @@ export const useHistoryStore = defineStore('history', () => {
     const list = entries.value.filter((item) => item.key !== entry.key)
     list.unshift(entry)
     list.sort((a, b) => b.updatedAt - a.updatedAt)
-    entries.value = list.slice(0, MAX_ENTRIES)
+    storedEntries.value = [...storedEntries.value.filter(item => item.ownerUid && item.ownerUid !== accountUid.value), ...list.slice(0, MAX_ENTRIES)]
   }
 
   /** 写盘；force=true 时忽略节流（暂停、切换、结束、关闭） */
@@ -150,7 +170,7 @@ export const useHistoryStore = defineStore('history', () => {
       return false
     }
     try {
-      target.setItem(STORAGE_KEY, JSON.stringify({ version: SCHEMA_VERSION, entries: entries.value }))
+      target.setItem(STORAGE_KEY, JSON.stringify({ version: SCHEMA_VERSION, entries: storedEntries.value }))
       lastError.value = ''
       return true
     } catch {
@@ -191,6 +211,7 @@ export const useHistoryStore = defineStore('history', () => {
       completed: input.completed === true,
       updatedAt: Date.now(),
       phoneSynced: previous?.phoneSynced,
+      ownerUid: input.source === 'official' ? accountUid.value || undefined : undefined,
     })
     persist(input.force === true)
   }
@@ -207,12 +228,16 @@ export const useHistoryStore = defineStore('history', () => {
   }
 
   function remove(key: string): void {
-    entries.value = entries.value.filter((item) => item.key !== key)
+    storedEntries.value = storedEntries.value.filter((item) => item.key !== key || (!!item.ownerUid && item.ownerUid !== accountUid.value))
     persist(true)
   }
 
   function clear(): void {
-    entries.value = []
+    phoneSyncEpoch += 1
+    phoneSyncStatus.value = 'idle'
+    phoneLoadingMore.value = false
+    phoneLoadMoreKey.value = null
+    storedEntries.value = storedEntries.value.filter(item => item.ownerUid && item.ownerUid !== accountUid.value)
     persist(true)
   }
 
@@ -254,7 +279,6 @@ export const useHistoryStore = defineStore('history', () => {
         : null
       const playedAt = typeof row.playedAt === 'string' ? row.playedAt : typeof episodeData.playedAt === 'string' ? episodeData.playedAt : ''
       const parsedTime = playedAt ? Date.parse(playedAt) : Number.NaN
-      const pubTime = episode.pubDate ? Date.parse(episode.pubDate) : Number.NaN
       const rawProgress = typeof row.progress === 'number' ? row.progress : episodeData.progress
       const position = typeof rawProgress === 'number' && Number.isFinite(rawProgress) && rawProgress > 0 ? rawProgress : 0
       const completed = episodeData.isFinished === true
@@ -268,8 +292,9 @@ export const useHistoryStore = defineStore('history', () => {
         position,
         duration: episode.durationSeconds,
         completed,
-        updatedAt: Number.isFinite(parsedTime) ? parsedTime : Number.isFinite(pubTime) ? pubTime : 0,
+        updatedAt: Number.isFinite(parsedTime) ? parsedTime : 0,
         phoneSynced: true,
+        ownerUid: accountUid.value || undefined,
       })
     }
     const merged: HistoryEntry[] = [...entries.value]
@@ -290,7 +315,7 @@ export const useHistoryStore = defineStore('history', () => {
         : { ...current, phoneSynced: true }
     }
     merged.sort((a, b) => b.updatedAt - a.updatedAt)
-    entries.value = merged.slice(0, MAX_ENTRIES)
+    storedEntries.value = [...storedEntries.value.filter(item => item.ownerUid && item.ownerUid !== accountUid.value), ...merged.slice(0, MAX_ENTRIES)]
     persist(true)
     phoneLoadMoreKey.value = page.loadMoreKey
     phoneSyncStatus.value = 'ready'
@@ -311,6 +336,7 @@ export const useHistoryStore = defineStore('history', () => {
       title: string
       podcast: string
       podcastId?: string
+      ownerUid?: string
     }
 
     let track: Track | null = null
@@ -329,6 +355,7 @@ export const useHistoryStore = defineStore('history', () => {
         title: episode.title,
         podcast: episode.podcast,
         podcastId: episode.podcastId,
+        ownerUid: source === 'official' ? accountUid.value : undefined,
       }
     }
 
@@ -338,7 +365,7 @@ export const useHistoryStore = defineStore('history', () => {
       (value) => {
         lastPosition = typeof value === 'number' && Number.isFinite(value) ? value : 0
         if (player.duration > 0) lastDuration = player.duration
-        if (track === null || player.status !== 'playing') return
+        if (track === null || player.status !== 'playing' || (track.source === 'official' && track.ownerUid !== accountUid.value)) return
         record({ ...track, position: lastPosition, duration: lastDuration })
       },
     )
@@ -347,7 +374,7 @@ export const useHistoryStore = defineStore('history', () => {
     watch(
       () => player.current?.id ?? '',
       () => {
-        if (track !== null) {
+        if (track !== null && (track.source !== 'official' || track.ownerUid === accountUid.value)) {
           record({ ...track, position: lastPosition, duration: lastDuration, force: true })
         }
         track = trackOf()
@@ -361,7 +388,7 @@ export const useHistoryStore = defineStore('history', () => {
     watch(
       () => player.status,
       (status) => {
-        if (track === null) return
+        if (track === null || (track.source === 'official' && track.ownerUid !== accountUid.value)) return
         if (status === 'ended') {
           record({ ...track, position: lastDuration, duration: lastDuration, completed: true, force: true })
           return
@@ -375,6 +402,7 @@ export const useHistoryStore = defineStore('history', () => {
 
   return {
     entries,
+    setAccount,
     recent,
     lastError,
     phoneSyncStatus,

@@ -1,3 +1,4 @@
+import { toRaw } from 'vue'
 /**
  * 渲染侧 RSS IPC 封装。
  *
@@ -65,6 +66,7 @@ export interface DesktopBridge {
   officialAuthLogout?: () => Promise<unknown>
   officialSubscriptions?: (cursor: unknown) => Promise<unknown>
   officialEpisodes?: (pid: string | null, cursor: unknown) => Promise<unknown>
+  officialEpisode?: (eid: string) => Promise<unknown>
   officialListenHistory?: (cursor: unknown) => Promise<unknown>
   officialFavorites?: (uid: string | null, cursor: unknown) => Promise<unknown>
   officialMediaUrl?: (eid: string | null) => Promise<unknown>
@@ -232,6 +234,7 @@ interface OfficialBridge {
   officialAuthLogout: () => Promise<unknown>
   officialSubscriptions: (cursor: unknown) => Promise<unknown>
   officialEpisodes: (pid: string | null, cursor: unknown) => Promise<unknown>
+  officialEpisode?: (eid: string) => Promise<unknown>
   officialListenHistory?: (cursor: unknown) => Promise<unknown>
   officialFavorites?: (uid: string | null, cursor: unknown) => Promise<unknown>
   officialMediaUrl: (eid: string | null) => Promise<unknown>
@@ -286,6 +289,11 @@ function readUser(value: unknown): OfficialUser | null {
     nickname: typeof record.nickname === 'string' ? record.nickname : '',
     avatar: typeof record.avatar === 'string' ? record.avatar : '',
   }
+}
+
+/** Vue 的响应式对象不能直接通过 Electron structured clone。 */
+function plainIpcValue(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(toRaw(value))) as unknown
 }
 
 /** 统一的调用包装：把 IPC 异常与未知结构都收敛成 OfficialFailure */
@@ -354,15 +362,22 @@ export async function officialAuthLogout(): Promise<OfficialSimpleResult> {
 }
 
 export async function officialSubscriptions(cursor?: unknown): Promise<OfficialPayloadResult> {
-  const result = await callOfficial((bridge) => bridge.officialSubscriptions(cursor ?? null))
+  const result = await callOfficial((bridge) => bridge.officialSubscriptions(plainIpcValue(cursor ?? null)))
   if ('ok' in result && result.ok === false) return result as OfficialFailure
   return { ok: true, payload: (result as Record<string, unknown>).payload }
 }
 
 export async function officialEpisodes(pid: string, cursor?: unknown): Promise<OfficialPayloadResult> {
   if (typeof pid !== 'string' || pid === '') return officialFailure('INVALID_ARGUMENT')
-  const result = await callOfficial((bridge) => bridge.officialEpisodes(pid, cursor ?? null))
+  const result = await callOfficial((bridge) => bridge.officialEpisodes(pid, plainIpcValue(cursor ?? null)))
   if ('ok' in result && result.ok === false) return result as OfficialFailure
+  return { ok: true, payload: (result as Record<string, unknown>).payload }
+}
+
+export async function officialEpisode(eid: string): Promise<OfficialPayloadResult> {
+  if (!eid) return officialFailure('INVALID_ARGUMENT')
+  const result = await callOfficial(bridge => bridge.officialEpisode ? bridge.officialEpisode(eid) : Promise.resolve({ ok: false, code: 'NO_BRIDGE' }))
+  if (result.ok === false) return result as OfficialFailure
   return { ok: true, payload: (result as Record<string, unknown>).payload }
 }
 
@@ -370,7 +385,7 @@ export async function officialListenHistory(cursor?: unknown): Promise<OfficialP
   const bridge = getOfficialBridge()
   if (bridge === null || typeof bridge.officialListenHistory !== 'function') return officialFailure('NO_BRIDGE')
   let raw: unknown
-  try { raw = await bridge.officialListenHistory(cursor ?? null) } catch { return officialFailure('IPC_FAILED') }
+  try { raw = await bridge.officialListenHistory(plainIpcValue(cursor ?? null)) } catch { return officialFailure('IPC_FAILED') }
   const value = asRecord(raw)
   if (value === null) return officialFailure('INVALID_RESPONSE')
   if (value.ok !== true) return officialFailure(typeof value.code === 'string' ? value.code : 'UNEXPECTED', typeof value.message === 'string' ? value.message : undefined)
@@ -382,7 +397,7 @@ export async function officialFavorites(uid: string, cursor?: unknown): Promise<
   const bridge = getOfficialBridge()
   if (bridge === null || typeof bridge.officialFavorites !== 'function') return officialFailure('NO_BRIDGE')
   let raw: unknown
-  try { raw = await bridge.officialFavorites(uid, cursor ?? null) } catch { return officialFailure('IPC_FAILED') }
+  try { raw = await bridge.officialFavorites(uid, plainIpcValue(cursor ?? null)) } catch { return officialFailure('IPC_FAILED') }
   const value = asRecord(raw)
   if (value === null) return officialFailure('INVALID_RESPONSE')
   if (value.ok !== true) return officialFailure(typeof value.code === 'string' ? value.code : 'UNEXPECTED', typeof value.message === 'string' ? value.message : undefined)
@@ -411,7 +426,7 @@ export async function officialSearch(
   if (bridge === null || typeof bridge.officialSearch !== 'function') return officialFailure('NO_BRIDGE')
   let raw: unknown
   try {
-    raw = await bridge.officialSearch(keyword.trim(), options ?? {})
+    raw = await bridge.officialSearch(keyword.trim(), plainIpcValue(options ?? {}))
   } catch {
     return officialFailure('IPC_FAILED')
   }

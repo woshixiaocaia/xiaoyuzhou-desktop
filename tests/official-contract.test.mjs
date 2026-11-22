@@ -207,7 +207,7 @@ test('端点常量与审计记录一致（仅 method/path，不含主机与凭�
   assert.deepEqual(OFFICIAL_ENDPOINTS.episodeList, { method: 'POST', path: '/v1/episode/list' })
   assert.deepEqual(OFFICIAL_ENDPOINTS.episodeHistory, { method: 'POST', path: '/v1/episode-played/list-history' })
   assert.deepEqual(OFFICIAL_ENDPOINTS.playbackProgress, { method: 'POST', path: '/v1/playback-progress/list' })
-  assert.deepEqual(OFFICIAL_ENDPOINTS.favorites, { method: 'POST', path: '/v1/pick/list-history' })
+  assert.deepEqual(OFFICIAL_ENDPOINTS.favorites, { method: 'POST', path: '/v1/favorite/list' })
   assert.deepEqual(OFFICIAL_ENDPOINTS.privateMediaGet, {
     method: 'GET',
     path: '/v1/private-media/get',

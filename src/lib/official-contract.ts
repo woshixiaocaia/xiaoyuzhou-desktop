@@ -29,8 +29,8 @@ export const OFFICIAL_ENDPOINTS = {
   episodeHistory: { method: 'POST', path: '/v1/episode-played/list-history' },
   /** 批量读取单集的账号播放进度 */
   playbackProgress: { method: 'POST', path: '/v1/playback-progress/list' },
-  /** 个人主页的喜欢列表，客户端只筛出单集收藏 */
-  favorites: { method: 'POST', path: '/v1/pick/list-history' },
+  /** 当前账号的收藏单集列表 */
+  favorites: { method: 'POST', path: '/v1/favorite/list' },
   /** 付费单集的媒体地址 */
   privateMediaGet: { method: 'GET', path: '/v1/private-media/get' },
 } as const

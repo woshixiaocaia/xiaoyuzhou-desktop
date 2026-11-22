@@ -27,9 +27,10 @@ const ENDPOINTS = {
   me: { host: HOSTS.webApi, method: 'GET', path: '/web/user/get-me' },
   subscriptions: { host: HOSTS.api, method: 'POST', path: '/v1/subscription/list' },
   episodes: { host: HOSTS.api, method: 'POST', path: '/v1/episode/list' },
+  episodeGet: { host: HOSTS.api, method: 'GET', path: '/v1/episode/get' },
   episodeHistory: { host: HOSTS.api, method: 'POST', path: '/v1/episode-played/list-history' },
   playbackProgress: { host: HOSTS.api, method: 'POST', path: '/v1/playback-progress/list' },
-  favorites: { host: HOSTS.api, method: 'POST', path: '/v1/pick/list-history' },
+  favorites: { host: HOSTS.api, method: 'POST', path: '/v1/favorite/list' },
   media: { host: HOSTS.api, method: 'GET', path: '/v1/private-media/get' },
   // 依据第三方源码实现（cli-anything-xiaoyuzhoufm/utils/api_client.py），
   // 请求体为 {keyword, type, limit(字符串), loadMoreKey?}，需登录态。
@@ -103,12 +104,22 @@ function createOfficialClient({ transport, storage, userAgent }) {
     }
   }
 
-  function appHeaders() {
+  function appHeaders(endpoint) {
     const headers = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'User-Agent': ua,
     }
+    // 收藏端点已用真实账号验证：需要 iOS 客户端信息，网页请求头会返回 rpc_error。
+    if (endpoint === ENDPOINTS.favorites) Object.assign(headers, {
+      'User-Agent': 'Xiaoyuzhou/2.57.1 (build:1576; iOS 17.4.1)',
+      OS: 'ios', 'OS-Version': '17.4.1', Manufacturer: 'Apple', Model: 'iPhone14,2',
+      Market: 'AppStore', BundleID: 'app.podcast.cosmos', 'App-Version': '2.57.1', 'App-BuildNo': '1576',
+      Timezone: 'Asia/Shanghai', 'Local-Time': new Date().toISOString(), 'abtest-info': '{}',
+      'app-permissions': '4', 'x-jike-device-properties': '', 'x-jike-device-id': '',
+      'x-custom-xiaoyuzhou-app-dev': '', WifiConnected: 'true',
+      'Accept-Language': 'zh-Hans-CN;q=1.0, zh-Hant-TW;q=0.9',
+    })
     if (session && typeof session.access === 'string' && session.access !== '') {
       headers['x-jike-access-token'] = session.access
     }
@@ -308,7 +319,7 @@ function createOfficialClient({ transport, storage, userAgent }) {
   async function authed(endpoint, { body, query } = {}) {
     if (!hasSession()) return fail('NOT_LOGGED_IN', '尚未登录')
     let res = await send(endpoint, {
-      headers: appHeaders(),
+      headers: appHeaders(endpoint),
       body: body === undefined ? undefined : JSON.stringify(body),
       query,
     })
@@ -317,7 +328,7 @@ function createOfficialClient({ transport, storage, userAgent }) {
       const refreshed = await refresh()
       if (!refreshed.ok) return refreshed
       res = await send(endpoint, {
-        headers: appHeaders(),
+        headers: appHeaders(endpoint),
         body: body === undefined ? undefined : JSON.stringify(body),
         query,
       })
@@ -393,12 +404,17 @@ function createOfficialClient({ transport, storage, userAgent }) {
     return { ok: true, payload: { data, loadMoreKey: nested?.loadMoreKey ?? root?.loadMoreKey ?? null } }
   }
 
-  /** 读取个人主页的喜欢列表；只请求当前登录账号自己的公开 uid。 */
+  /** 收藏列表按登录态读取，不向接口传其他账号的 UID。 */
   async function fetchFavorites(uid, loadMoreKey) {
     if (typeof uid !== 'string' || uid === '') return fail('INVALID_ARGUMENT', '缺少账号标识')
-    const body = { uid }
+    const body = { limit: 20 }
     if (loadMoreKey !== undefined && loadMoreKey !== null) body.loadMoreKey = loadMoreKey
     return authed(ENDPOINTS.favorites, { body })
+  }
+
+  async function fetchEpisode(eid) {
+    if (typeof eid !== 'string' || eid === '') return fail('INVALID_ARGUMENT', '缺少单集标识')
+    return authed(ENDPOINTS.episodeGet, { query: { eid } })
   }
 
   /** 付费单集的媒体地址（普通单集的地址在单集对象里已带） */
@@ -423,6 +439,7 @@ function createOfficialClient({ transport, storage, userAgent }) {
     fetchEpisodes,
     fetchListenHistory,
     fetchFavorites,
+    fetchEpisode,
     search,
     fetchMediaUrl,
     // 供测试观察，不参与业务

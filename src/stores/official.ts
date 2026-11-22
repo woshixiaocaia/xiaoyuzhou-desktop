@@ -168,7 +168,7 @@ export const useOfficialStore = defineStore('official', () => {
       const latest = episodes.value[pid] ?? current
       const existing = new Set(latest.items.map((episode) => episode.eid))
       const added = page.episodes.filter((episode) => !existing.has(episode.eid))
-      if (added.length === 0 && page.loadMoreKey != null && Object.is(page.loadMoreKey, current.loadMoreKey)) {
+      if (added.length === 0 && page.loadMoreKey != null && JSON.stringify(page.loadMoreKey) === JSON.stringify(current.loadMoreKey)) {
         setEpisodes(pid, { loadingMore: false, loadMoreKey: null, error: '没有新的单集了。' })
         return
       }
